@@ -557,6 +557,7 @@ elif page == "Water Predictions":
     conn.close()
 
 # Power Management Page
+# Power Management Page - Corrected Version
 elif page == "Power Management":
     st.header("⚡ Power Source Management")
     
@@ -574,15 +575,31 @@ elif page == "Power Management":
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            st.metric("Current Source", current_power['source'])
+            # Add power source emoji/icon
+            source_icons = {'Solar': '☀️', 'Generator': '⚡', 'Grid': '🔌'}
+            icon = source_icons.get(current_power['source'], '⚡')
+            st.metric(f"{icon} Current Source", current_power['source'])
+        
         with col2:
-            st.metric("Efficiency", f"{current_power['efficiency']:.1%}")
+            st.metric("⚡ Efficiency", f"{current_power['efficiency']:.1%}")
+        
         with col3:
-            st.metric("Cost (₦/hour)", f"₦{current_power['cost']:.0f}")
+            cost_display = "₦0 (Free)" if current_power['cost'] == 0 else f"₦{current_power['cost']:.0f}/hr"
+            st.metric("💰 Operating Cost", cost_display)
+        
+        # Power source health indicator
+        if current_power['efficiency'] < 0.6:
+            st.error("🚨 Low efficiency detected! Consider maintenance or switching power source.")
+        elif current_power['efficiency'] < 0.8:
+            st.warning("⚠️ Moderate efficiency. Monitor performance closely.")
+        else:
+            st.success("✅ Power source operating at optimal efficiency.")
+    else:
+        st.warning("⚠️ No power source data available. Please initialize a power source.")
     
     st.divider()
     
-    # Power source switching
+    # Power source switching with better validation
     st.subheader("🔄 Switch Power Source")
     
     col1, col2 = st.columns(2)
@@ -590,82 +607,361 @@ elif page == "Power Management":
     with col1:
         new_source = st.selectbox("Select Power Source", ['Solar', 'Generator', 'Grid'])
         
-        # Set default values based on source
+        # Set realistic default values based on source
         if new_source == 'Solar':
             default_efficiency = 0.85
-            default_cost = 0
+            default_cost = 0.0
+            efficiency_range = (0.60, 0.95)
         elif new_source == 'Generator':
             default_efficiency = 0.70
-            default_cost = 1000
+            default_cost = 800.0
+            efficiency_range = (0.50, 0.80)
         else:  # Grid
             default_efficiency = 0.85
-            default_cost = 500
+            default_cost = 400.0
+            efficiency_range = (0.70, 0.90)
         
-        efficiency = st.slider("Efficiency (%)", 0.0, 1.0, default_efficiency, 0.01)
-        cost = st.number_input("Cost per hour (₦)", 0.0, 5000.0, default_cost)
+        # Efficiency slider with appropriate ranges
+        efficiency = st.slider(
+            f"Efficiency (%) - Range for {new_source}: {efficiency_range[0]:.0%}-{efficiency_range[1]:.0%}", 
+            efficiency_range[0], efficiency_range[1], default_efficiency, 0.01,
+            help=f"Typical efficiency range for {new_source} power systems"
+        )
+        
+        # Cost input with validation
+        if new_source == 'Solar':
+            cost = 0.0
+            st.info("☀️ Solar power has zero operational cost")
+        else:
+            max_cost = 2000.0 if new_source == 'Generator' else 1000.0
+            cost = st.number_input(
+                f"Cost per hour (₦) - Max for {new_source}: ₦{max_cost:.0f}", 
+                0.0, max_cost, default_cost,
+                help=f"Operational cost per hour for {new_source}"
+            )
+        
+        # Add reason for switch
+        switch_reason = st.text_area("Reason for switching (optional)", 
+                                   placeholder="e.g., scheduled maintenance, cost optimization, power outage...")
     
     with col2:
         st.write("**Power Source Characteristics:**")
-        if new_source == 'Solar':
-            st.info("🌞 **Solar Power**\n- Clean & renewable\n- Weather dependent\n- Zero operational cost")
-        elif new_source == 'Generator':
-            st.warning("⛽ **Generator**\n- Reliable backup\n- Higher operational cost\n- Fuel dependent")
-        else:
-            st.info("🔌 **Grid Electricity**\n- Stable supply\n- Moderate cost\n- Grid dependent")
-    
-    if st.button("Switch Power Source"):
-        # Log the power source change
-        c = conn.cursor()
-        c.execute("""
-            INSERT INTO power_logs (timestamp, source, efficiency, cost)
-            VALUES (?, ?, ?, ?)
-        """, (datetime.now(), new_source, efficiency, cost))
-        conn.commit()
         
-        st.success(f"✅ Power source switched to {new_source}")
-        st.rerun()
+        if new_source == 'Solar':
+            st.info("""
+            🌞 **Solar Power**
+            - ✅ Clean & renewable energy
+            - ✅ Zero operational cost
+            - ⚠️ Weather dependent
+            - ⚠️ Daylight hours only
+            - 💡 Best efficiency: 10 AM - 3 PM
+            """)
+        elif new_source == 'Generator':
+            st.warning("""
+            ⛽ **Generator Power**
+            - ✅ Reliable backup option
+            - ✅ Weather independent
+            - ❌ Higher operational cost
+            - ❌ Fuel dependent
+            - 🔧 Requires regular maintenance
+            """)
+        else:
+            st.info("""
+            🔌 **Grid Electricity**
+            - ✅ Stable supply
+            - ✅ Moderate cost
+            - ⚠️ Grid dependent
+            - ⚠️ Outage susceptible
+            - 💡 Most reliable option
+            """)
+        
+        # Show current vs new comparison
+        if not latest_power.empty:
+            current = latest_power.iloc[0]
+            st.write("**Comparison with Current:**")
+            
+            eff_change = efficiency - current['efficiency']
+            cost_change = cost - current['cost']
+            
+            if eff_change > 0:
+                st.write(f"📈 Efficiency: +{eff_change:.1%} improvement")
+            elif eff_change < 0:
+                st.write(f"📉 Efficiency: {eff_change:.1%} decrease")
+            else:
+                st.write("➡️ Efficiency: No change")
+            
+            if cost_change > 0:
+                st.write(f"📈 Cost: +₦{cost_change:.0f}/hr increase")
+            elif cost_change < 0:
+                st.write(f"📉 Cost: -₦{abs(cost_change):.0f}/hr savings")
+            else:
+                st.write("➡️ Cost: No change")
+    
+    # Confirmation dialog for switching
+    if st.button("🔄 Switch Power Source", type="primary"):
+        # Add confirmation for critical switches
+        should_switch = True
+        
+        if not latest_power.empty:
+            current = latest_power.iloc[0]
+            # Warn if switching to less efficient or more expensive option
+            if efficiency < current['efficiency'] - 0.1:
+                st.warning("⚠️ Warning: New source has significantly lower efficiency!")
+            if cost > current['cost'] + 200:
+                st.warning("⚠️ Warning: New source has significantly higher cost!")
+        
+        if should_switch:
+            try:
+                # Log the power source change with additional info
+                c = conn.cursor()
+                c.execute("""
+                    INSERT INTO power_logs (timestamp, source, efficiency, cost)
+                    VALUES (?, ?, ?, ?)
+                """, (datetime.now(), new_source, efficiency, cost))
+                conn.commit()
+                
+                # Log the switch reason if provided
+                if switch_reason.strip():
+                    st.info(f"📝 Switch reason: {switch_reason}")
+                
+                st.success(f"✅ Power source successfully switched to {new_source}")
+                st.success(f"🔧 New configuration: {efficiency:.1%} efficiency, ₦{cost:.0f}/hr cost")
+                
+                # Auto-refresh to show new data
+                time.sleep(2)
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"❌ Error switching power source: {str(e)}")
     
     st.divider()
     
-    # Power usage analytics
+    # Power usage analytics with improved visualizations
     st.subheader("📊 Power Usage Analytics")
     
     power_data = pd.read_sql("""
         SELECT * FROM power_logs 
-        ORDER BY timestamp DESC LIMIT 100
+        ORDER BY timestamp DESC LIMIT 168  -- Last week of hourly data
     """, conn)
     
-    if not power_data.empty:
+    if not power_data.empty and len(power_data) > 1:
         power_data['timestamp'] = pd.to_datetime(power_data['timestamp'])
+        power_data = power_data.sort_values('timestamp')
+        
+        # Analytics time period selector
+        col1, col2 = st.columns([3, 1])
+        
+        with col2:
+            analysis_period = st.selectbox("Analysis Period", 
+                                         ["Last 24 Hours", "Last 7 Days", "Last 30 Days", "All Time"])
+        
+        # Filter data based on selected period
+        now = datetime.now()
+        if analysis_period == "Last 24 Hours":
+            filtered_data = power_data[power_data['timestamp'] >= now - timedelta(hours=24)]
+        elif analysis_period == "Last 7 Days":
+            filtered_data = power_data[power_data['timestamp'] >= now - timedelta(days=7)]
+        elif analysis_period == "Last 30 Days":
+            filtered_data = power_data[power_data['timestamp'] >= now - timedelta(days=30)]
+        else:
+            filtered_data = power_data
+        
+        if not filtered_data.empty:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Power source distribution with better colors
+                source_dist = filtered_data['source'].value_counts()
+                colors = ['#FFD700', '#FF6B6B', '#4ECDC4']  # Gold, Red, Teal
+                
+                fig_pie = px.pie(
+                    values=source_dist.values, 
+                    names=source_dist.index,
+                    title=f'Power Source Usage - {analysis_period}',
+                    color_discrete_sequence=colors
+                )
+                fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+                st.plotly_chart(fig_pie, use_container_width=True)
+            
+            with col2:
+                # Efficiency over time
+                fig_efficiency = px.line(
+                    filtered_data, 
+                    x='timestamp', 
+                    y='efficiency',
+                    color='source',
+                    title=f'Power Efficiency Over Time - {analysis_period}',
+                    labels={'efficiency': 'Efficiency (%)', 'timestamp': 'Time'}
+                )
+                fig_efficiency.update_layout(yaxis_tickformat='.0%')
+                st.plotly_chart(fig_efficiency, use_container_width=True)
+            
+            # Cost analysis with cumulative view
+            st.subheader("💰 Cost Analysis")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Daily cost breakdown
+                if len(filtered_data) > 1:
+                    daily_cost = filtered_data.groupby([
+                        filtered_data['timestamp'].dt.date, 'source'
+                    ])['cost'].sum().reset_index()
+                    daily_cost.columns = ['date', 'source', 'total_cost']
+                    
+                    fig_cost = px.bar(
+                        daily_cost, 
+                        x='date', 
+                        y='total_cost', 
+                        color='source',
+                        title=f'Daily Power Costs by Source - {analysis_period}',
+                        labels={'total_cost': 'Cost (₦)', 'date': 'Date'}
+                    )
+                    st.plotly_chart(fig_cost, use_container_width=True)
+            
+            with col2:
+                # Cost summary metrics
+                total_cost = filtered_data['cost'].sum()
+                avg_hourly_cost = filtered_data['cost'].mean()
+                hours_analyzed = len(filtered_data)
+                
+                st.metric("💰 Total Cost", f"₦{total_cost:,.0f}")
+                st.metric("⏱️ Avg Hourly Cost", f"₦{avg_hourly_cost:.0f}")
+                st.metric("🕐 Hours Analyzed", f"{hours_analyzed}")
+                
+                # Cost breakdown by source
+                cost_by_source = filtered_data.groupby('source')['cost'].sum()
+                st.write("**Cost by Source:**")
+                for source, cost in cost_by_source.items():
+                    percentage = (cost / total_cost * 100) if total_cost > 0 else 0
+                    st.write(f"• {source}: ₦{cost:,.0f} ({percentage:.1f}%)")
+        
+        # Power efficiency comparison with statistical analysis
+        st.subheader("⚡ Efficiency Analysis")
         
         col1, col2 = st.columns(2)
         
         with col1:
-            # Power source distribution
-            source_dist = power_data['source'].value_counts()
-            fig_pie = px.pie(values=source_dist.values, names=source_dist.index,
-                           title='Power Source Usage Distribution')
-            st.plotly_chart(fig_pie, use_container_width=True)
+            # Average efficiency by source
+            avg_efficiency = filtered_data.groupby('source').agg({
+                'efficiency': ['mean', 'std', 'min', 'max', 'count']
+            }).round(3)
+            avg_efficiency.columns = ['Mean', 'Std Dev', 'Min', 'Max', 'Count']
+            
+            st.write("**Efficiency Statistics by Source:**")
+            st.dataframe(avg_efficiency, use_container_width=True)
         
         with col2:
-            # Cost over time
-            daily_cost = power_data.groupby(power_data['timestamp'].dt.date)['cost'].sum().reset_index()
-            daily_cost.columns = ['date', 'total_cost']
+            # Efficiency comparison chart
+            efficiency_stats = filtered_data.groupby('source')['efficiency'].mean().reset_index()
             
-            fig_cost = px.line(daily_cost, x='date', y='total_cost',
-                             title='Daily Power Costs',
-                             labels={'total_cost': 'Cost (₦)', 'date': 'Date'})
-            st.plotly_chart(fig_cost, use_container_width=True)
+            fig_eff = px.bar(
+                efficiency_stats, 
+                x='source', 
+                y='efficiency',
+                title='Average Efficiency by Power Source',
+                labels={'efficiency': 'Average Efficiency', 'source': 'Power Source'},
+                color='source',
+                color_discrete_sequence=['#FFD700', '#FF6B6B', '#4ECDC4']
+            )
+            fig_eff.update_layout(yaxis_tickformat='.0%', showlegend=False)
+            fig_eff.update_traces(texttemplate='%{y:.1%}', textposition='outside')
+            st.plotly_chart(fig_eff, use_container_width=True)
         
-        # Power efficiency comparison
-        st.subheader("⚡ Efficiency Comparison")
-        avg_efficiency = power_data.groupby('source')['efficiency'].mean().reset_index()
+        # Power source recommendations
+        st.subheader("💡 Recommendations")
         
-        fig_eff = px.bar(avg_efficiency, x='source', y='efficiency',
-                        title='Average Efficiency by Power Source',
-                        labels={'efficiency': 'Efficiency (%)', 'source': 'Power Source'})
-        fig_eff.update_traces(marker_color=['#FFD700', '#FF6B6B', '#4ECDC4'])
-        st.plotly_chart(fig_eff, use_container_width=True)
+        # Calculate recommendations based on data
+        most_efficient = avg_efficiency['Mean'].idxmax()
+        most_cost_effective = cost_by_source.idxmin() if len(cost_by_source) > 0 else "Solar"
+        most_used = source_dist.index[0]
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.info(f"""
+            **🏆 Most Efficient**
+            {most_efficient}
+            Avg: {avg_efficiency.loc[most_efficient, 'Mean']:.1%}
+            """)
+        
+        with col2:
+            st.success(f"""
+            **💰 Most Cost-Effective**
+            {most_cost_effective}
+            Total Cost: ₦{cost_by_source.get(most_cost_effective, 0):,.0f}
+            """)
+        
+        with col3:
+            st.warning(f"""
+            **📈 Most Used**
+            {most_used}
+            Usage: {source_dist.iloc[0]} times ({source_dist.iloc[0]/len(filtered_data)*100:.1f}%)
+            """)
+        
+        # Optimization suggestions
+        st.write("**🔧 Optimization Suggestions:**")
+        
+        suggestions = []
+        
+        # Efficiency-based suggestions
+        if most_efficient != most_used and avg_efficiency.loc[most_efficient, 'Mean'] > avg_efficiency.loc[most_used, 'Mean'] + 0.1:
+            suggestions.append(f"Consider using {most_efficient} more often for better efficiency")
+        
+        # Cost-based suggestions
+        if most_cost_effective != most_used and most_cost_effective in cost_by_source:
+            potential_savings = cost_by_source.get(most_used, 0) - cost_by_source.get(most_cost_effective, 0)
+            if potential_savings > 100:
+                suggestions.append(f"Switch to {most_cost_effective} to potentially save ₦{potential_savings:,.0f}")
+        
+        # Maintenance suggestions
+        for source in avg_efficiency.index:
+            if avg_efficiency.loc[source, 'Mean'] < 0.7:
+                suggestions.append(f"Consider maintenance for {source} (efficiency below 70%)")
+        
+        if suggestions:
+            for suggestion in suggestions:
+                st.write(f"• {suggestion}")
+        else:
+            st.write("• Current power management appears optimal!")
+    
+    else:
+        st.info("📊 Insufficient data for detailed analytics. More data will be available after power source switches.")
+    
+    # Add power monitoring alerts
+    st.subheader("🚨 Power Monitoring Alerts")
+    
+    if not latest_power.empty:
+        current = latest_power.iloc[0]
+        
+        # Check for alerts
+        alerts = []
+        
+        if current['efficiency'] < 0.6:
+            alerts.append(("🔴 Critical", f"Efficiency critically low: {current['efficiency']:.1%}"))
+        elif current['efficiency'] < 0.75:
+            alerts.append(("🟡 Warning", f"Efficiency below optimal: {current['efficiency']:.1%}"))
+        
+        if current['cost'] > 1500:
+            alerts.append(("🔴 Critical", f"High operational cost: ₦{current['cost']:.0f}/hr"))
+        elif current['cost'] > 1000:
+            alerts.append(("🟡 Warning", f"Elevated cost: ₦{current['cost']:.0f}/hr"))
+        
+        # Time-based alerts
+        last_update = pd.to_datetime(current['timestamp'])
+        hours_since_update = (datetime.now() - last_update).total_seconds() / 3600
+        
+        if hours_since_update > 24:
+            alerts.append(("🟡 Warning", f"No power updates for {hours_since_update:.1f} hours"))
+        
+        if alerts:
+            for alert_type, message in alerts:
+                if "Critical" in alert_type:
+                    st.error(f"{alert_type}: {message}")
+                else:
+                    st.warning(f"{alert_type}: {message}")
+        else:
+            st.success("✅ All power systems operating normally")
     
     conn.close()
 
